@@ -1,0 +1,295 @@
+import math
+import numpy as np
+from sympy import *
+
+from perceptron import Perceptron
+from activation import ActivationFunction
+
+class Sigmoid(ActivationFunction):
+    """ Sigmoid activation: `f(x) = 1/(1+e^(-x))` """
+    def forward(self, x):
+        f = 1/(1 + np.exp(-x))
+        return f
+
+    def gradient(self, x):
+        f = x * (1 - x)
+        return f
+
+class Linear(ActivationFunction):
+    def forward(self, x):
+        f = x
+        return f
+
+    def gradient(self, x):
+        f = 1
+        return f
+
+class Layer:
+    def __init__(self, n_inputs, n_units, act_f):
+        """ 
+            Initialize the layer, creating `num_units` perceptrons with `num_inputs` each. 
+        """
+        self.n_units = n_units
+        # TODO Create the perceptrons required for the layer
+        self.ps = []
+        for i in range(n_units):
+            self.ps.append(Perceptron(n_inputs, act_f, 0.5))
+
+    def activation(self, x):
+        """ Returns the activation `a` of all perceptrons in the layer, given the input vector`x`. """
+        return np.array([p.activation(x) for p in self.ps])
+
+    def output(self, a):
+        """ Returns the output `o` of all perceptrons in the layer, given the activation vector `a`. """
+        return np.array([p.output(ai) for p, ai in zip(self.ps, a)])
+
+    def predict(self, x):
+        """ Returns the output `o` of all perceptrons in the layer, given the input vector `x`. """
+        return np.array([p.predict(x) for p in self.ps])
+
+    def gradient(self, a):
+        """ Returns the gradient of the activation function for all perceptrons in the layer, given the activation vector `a`. """
+        return np.array([p.gradient(ai) for p, ai in zip(self.ps, a)])
+
+    def update_weights(self, dw):
+        """ 
+        Update the weights of all of the perceptrons in the layer, given the weight change of each.
+        Input size: (n_inputs+1, n_units)
+        """
+        for i in range(self.n_units):
+            self.ps[i].w += dw[:,i]
+
+    @property
+    def w(self):
+        """
+            Returns the weights of the neurons in the layer.
+            Size: (n_inputs+1, n_units)
+        """
+        return np.array([p.w for p in self.ps]).T
+
+    def import_weights(self, w):
+        """ 
+            Import the weights of all of the perceptrons in the layer.
+            Input size: (n_inputs+1, n_units)
+        """
+        for i in range(self.n_units):
+            self.ps[i].w = w[:,i]
+
+class MLP:
+     """ 
+         Multi-layer perceptron class
+     Parameters
+     ----------
+     n_inputs : int
+         Number of inputs
+     n_hidden_units : int
+         Number of units in the hidden layer
+     n_outputs : int
+         Number of outputs (One output -> one unit in layer)
+     alpha : float
+         Learning rate used for gradient descent
+     """
+     def __init__(self, n_inputs, n_hidden_units, n_outputs, alpha):
+        self.n_inputs = n_inputs
+        self.n_hidden_units = n_hidden_units
+        self.n_outputs = n_outputs
+        self.alpha = alpha
+
+        # TODO: Define a hidden layer and the output layer
+        self.l1 = Layer(self.n_inputs, self.n_hidden_units, Sigmoid) # Hidden layer 1
+        self.l2 = Layer(self.n_hidden_units, self.n_outputs, Linear) # Output layer has one unit with as many inputs as there are units in hidden layer
+
+     def predict(self, x):
+        l1_out = self.l1.predict(x)
+        #print(f"L1 prediction: {l1_out}")
+        output = self.l2.predict(l1_out)
+        #print(f"L2 prediction: {output}")
+
+        return output
+
+     def train(self, x, t, N):
+        """
+            Train the network
+
+        Parameters
+        ----------
+         `x` : numpy array
+             Inputs (size: n_examples, n_inputs)
+         `t` : numpy array
+             Targets (size: n_examples, n_outputs)
+
+        TODO: Write the function to iterate through training examples and apply gradient descent to update the neuron weights
+         """
+        #percepLin = Perceptron(num_inputs, Linear, 0.5)
+        #percepSig = Perceptron(num_inputs, Sigmoid, 0.5)
+
+        p = 0
+        dw_l1 = np.array([[0.0,0.0],[0.0,0.0],[0.0,0.0]]) # temporary array for weight changes
+        dw_l2 = np.array([[0.0],[0.0],[0.0]]) # temporary array for weight changes
+
+        # Loop over training examples
+        for input, target in zip(x, t):     # x = training data, t = training target
+            # Forward pass
+            #print(f"Training set: {p} ------------------------------------------")
+            p = p + 1
+            #print("Forwards pass:")
+            a1 = self.l1.activation(input)
+            #print(f"Activations for layer 1: {a1}")
+            o1 = self.l1.output(a1)
+            #print(f"Outputs for layer 1: {o1}")
+
+            a2 = self.l2.activation(o1)
+            #print(f"Activations for layer 2: {a2}")
+            y = self.l2.output(a2)
+            #print(f"Output of output layer: {y}")
+            
+
+            # Backpropagation
+            # Error of output layer:
+            sig_K_j = self.l2.gradient(a2)*(y-target) # = g'K(aK)(y-t)
+            #print(f"sig_K_j: {sig_K_j}")
+            
+            # Errors of first (previous) layer (simplified eq. 8 because there is only one unit in next layer (output))
+            sig_k_j = self.l1.gradient(a1) * self.l2.w[1] * sig_K_j
+            #print(f"sig_k_1: {sig_k_j[0]}")
+            #print(f"sig_k_2: {sig_k_j[1]}")
+
+            # Calculate and sum weight changes for each input to each neuron in layer 1 and 2:
+            # Layer 1 (Hidden)
+            o = np.append(1,input) # add bias input x0 to currrent training set input
+            for i in range(self.n_inputs+1):
+                for j in range(self.n_hidden_units):
+                    # for every neuron, a weight change is calculated for each input
+                    dw_l1[i,j] += -self.alpha/N * sig_k_j[j] * o[i] # Naming convention: L1 = layer 1, [0,1] = input 0 (bias) of neutron 1
+
+            # Layer 2 (Output)
+            o_out = np.append(1,o1) # add bias input x0 to currrent training set input
+            for i in range(self.n_inputs+1):
+                # for every neuron, a weight change is calculated for each input
+                dw_l2[i] += -self.alpha/N * sig_K_j * o_out[i]
+
+        # Apply weight updates
+        #print("layer 1 weights before contribution:")
+        #print(self.l1.w)
+        #print("layer 2 weights before contribution:")
+        #print(self.l2.w)
+
+        ws1 = self.l1.w + dw_l1
+        ws2 = self.l2.w + dw_l2
+
+        #print("layer 1 weights after contribution:")
+        #print(ws1)
+        #print("layer 2 weights after contribution:")
+        #print(ws2)
+
+        self.import_weights([ws1, ws2])
+        return None # remove this line
+
+     def export_weights(self):
+        return [self.l1.w, self.l2.w]
+
+
+     def import_weights(self, ws):
+        if ws[0].shape == (self.n_inputs+1, self.n_hidden_units) and ws[1].shape == (self.n_hidden_units+1, 1):
+            #print("Importing weights..")
+            self.l1.import_weights(ws[0])
+            self.l2.import_weights(ws[1])        
+        else:
+            print("Sizes do not match")
+
+
+     def calc_prediction_error(model, x, t):
+        """ Calculate the average prediction error """
+        E = 0
+        for input, target in zip(x, t):     # x = training data, t = training target
+            #print(f"MSE input: {input}")
+            output = model.predict(input)
+            #print(f"OUTPUT: {output}")
+            delta_w = (target - output)
+            #print(f"ERROR: {delta_w}")
+            E = E + delta_w**2/len(t)
+        return E
+
+
+
+if __name__ == "__main__":
+    # Test new activation functions
+    data = np.array( [[0.5, 0.5, 0], [1.0, 0, 0], [2.0, 3.0, 0], [0, 1.0, 1], [0, 2.0, 1], [1.0, 2.2, 1] ] )
+    xdata = data[:,:2]
+    ydata = data[:,2]
+    print("BEGIN TEST -----------------------------------------------------------------")
+    print("Training data:")
+    print(xdata)
+    print(ydata)
+
+    # 1.1 - results are as expected TODO: write more!
+    #actF = Linear()
+    #print(actF.forward(1))  # Returns 1
+    #print(actF.forward(0))  # Returns 0
+    #print(actF.forward(-1))  # Returns 0
+
+    #actF = Sigmoid()
+    #print(actF.forward(1))  # Returns 1
+    #print(actF.forward(0))  # Returns 0
+    #print(actF.forward(-1))  # Returns 0
+
+    # Test Layer class init
+    #print("Testing Layer with transpose")
+    #data = np.array([math.pi, 1]).T
+    #lay = Layer(len(data), 5, Sigmoid)
+    #lay.predict(data)
+    #print(lay.w)
+
+    # Without transpose
+    #print("Testing Layer without transpose")
+    #data = np.array([math.pi, 1])
+    #lay = Layer(len(data), 5, Sigmoid)
+    #lay.predict(data)
+    #print(lay.w)
+
+
+    # TODO: Test MLP class init
+    num_inputs = 2
+    n_hidden_units = 2
+    n_outputs = 1
+    mlp = MLP(num_inputs, n_hidden_units, n_outputs, 1e-3)
+    #print("Test MLP with first set:")
+    #print(mlp.predict(xdata[0,:])) # Test MLP with first training set
+
+
+    # Mean Square Error test for one MLP:
+    #print("TEST MSE of MLP with whole test set:")
+    #print(mlp.calc_prediction_error(xdata, ydata))
+
+    # Training function:
+    #print("Test MLP training:")
+    #mlp.train(xdata, ydata, 6)
+    
+
+    # TODO: Initialization
+
+
+    # TODO: Write a for loop to train the network for a number of iterations. Make plots.
+    acceptable = 0
+    j = 0
+
+    while(not(acceptable) and j < 5000):
+        print("Epoch:", j)
+        print("Test MLP training:")
+        mlp.train(xdata, ydata, 6) # Train new weights
+        mse = mlp.calc_prediction_error(xdata, ydata) # Make a prediction with new weights and find error
+        print(f"MSE: {mse}")
+
+        acceptable = np.all(abs(mse)<0.23) # continue reiterating if prediction is not acceptable
+        
+
+        j = j + 1
+        print(j)
+
+    print(f"Layer 1: {mlp.l1.w}")
+    print(f"Layer 2: {mlp.l2.w}")
+    print(f"Training took {j} iterations")
+
+
+
+    pass

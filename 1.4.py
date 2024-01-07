@@ -71,7 +71,6 @@ print("Freq.: ", data[1])    #32.84611594678929
 
 #1.4 
 plt.plot(current, spikeFreq)
-#plt.plot(membrane_potential)
 plt.ylabel("Spike Frequency [Hz]")
 plt.xlabel("Current [A]")
 plt.show()

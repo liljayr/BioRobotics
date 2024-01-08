@@ -1,5 +1,5 @@
 import numpy as np
-import sympy as smp 
+# import sympy as smp 
 import matplotlib.pyplot as plt 
 print("Starting: Leaky-integrate and fire function:")
  #T: time variable, how much time we have (0)

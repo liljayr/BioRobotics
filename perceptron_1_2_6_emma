@@ -19,6 +19,7 @@ class SignActivation(ActivationFunction):
             Function derivative.
             Define the correct return value (derivative), given input `x`
       """
+      print("SignActivation in perceptron.py")
       return None
 
 class Perceptron:
@@ -43,9 +44,9 @@ class Perceptron:
         if not isinstance(act_f, type) or not issubclass(act_f, ActivationFunction):
             raise TypeError('act_f has to be a subclass of ActivationFunction (not a class instance).')
         # weights
-        self.w = np.random.normal(0,0.5,n_inputs)  # np.random.normal(mean, standard deviation, size)
+        self.w = np.random.normal(0,0.1,n_inputs)  # np.random.normal(mean, standard deviation, size)
         self.w = np.append(w0, self.w)    # add in bias weight
-
+      
         # activation function
         self.f = act_f()
 

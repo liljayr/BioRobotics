@@ -1,9 +1,11 @@
 import math
 import numpy as np
+import matplotlib.pyplot as plt
 from sympy import *
 
 from perceptron import Perceptron
 from activation import ActivationFunction
+
 
 class Sigmoid(ActivationFunction):
     """ Sigmoid activation: `f(x) = 1/(1+e^(-x))` """
@@ -12,7 +14,7 @@ class Sigmoid(ActivationFunction):
         return f
 
     def gradient(self, x):
-        f = x * (1 - x)
+        f = self.forward(x) * (1 - self.forward(x)) # derivative of activation function
         return f
 
 class Linear(ActivationFunction):
@@ -33,7 +35,8 @@ class Layer:
         # TODO Create the perceptrons required for the layer
         self.ps = []
         for i in range(n_units):
-            self.ps.append(Perceptron(n_inputs, act_f, 0.5))
+            self.ps.append(Perceptron(n_inputs, act_f, -1))
+
 
     def activation(self, x):
         """ Returns the activation `a` of all perceptrons in the layer, given the input vector`x`. """
@@ -107,7 +110,7 @@ class MLP:
 
         return output
 
-     def train(self, x, t, N):
+     def train(self, x, t):
         """
             Train the network
 
@@ -120,20 +123,17 @@ class MLP:
 
         TODO: Write the function to iterate through training examples and apply gradient descent to update the neuron weights
          """
-        #percepLin = Perceptron(num_inputs, Linear, 0.5)
-        #percepSig = Perceptron(num_inputs, Sigmoid, 0.5)
 
         p = 0
         dw_l1 = np.array([[0.0,0.0],[0.0,0.0],[0.0,0.0]]) # temporary array for weight changes
         dw_l2 = np.array([[0.0],[0.0],[0.0]]) # temporary array for weight changes
 
         # Loop over training examples
-        for input, target in zip(x, t):     # x = training data, t = training target
+        for inp, target in zip(x, t):     # x = training data, t = training target
             # Forward pass
             #print(f"Training set: {p} ------------------------------------------")
             p = p + 1
-            #print("Forwards pass:")
-            a1 = self.l1.activation(input)
+            a1 = self.l1.activation(inp)
             #print(f"Activations for layer 1: {a1}")
             o1 = self.l1.output(a1)
             #print(f"Outputs for layer 1: {o1}")
@@ -143,31 +143,39 @@ class MLP:
             y = self.l2.output(a2)
             #print(f"Output of output layer: {y}")
             
-
             # Backpropagation
             # Error of output layer:
-            sig_K_j = self.l2.gradient(a2)*(y-target) # = g'K(aK)(y-t)
-            #print(f"sig_K_j: {sig_K_j}")
-            
-            # Errors of first (previous) layer (simplified eq. 8 because there is only one unit in next layer (output))
-            sig_k_j = self.l1.gradient(a1) * self.l2.w[1] * sig_K_j
+            sig_2_j = self.l2.gradient(y)*(y-target) # = g'K(aK)(y-t)
+            # print(f"                    sig_K_j: {sig_K_j}")
+
+            # Errors of first layer (simplified eq. 8 because there is only one unit in next layer (output))
+            g_dot = self.l1.gradient(inp)
+            sig_1_j = g_dot * np.sum(self.l2.w*sig_2_j,axis=0)
+
             #print(f"sig_k_1: {sig_k_j[0]}")
             #print(f"sig_k_2: {sig_k_j[1]}")
+            
+
+            inp = np.hstack((np.ones(1),inp))
+            dw_l1 = -self.alpha/len(t) * np.dot(sig_1_j.reshape(sig_1_j.shape[0],1),inp.reshape(1,3)).T 
+
+            dw_l2 = -self.alpha/len(t)*sig_2_j*o1
 
             # Calculate and sum weight changes for each input to each neuron in layer 1 and 2:
             # Layer 1 (Hidden)
-            o = np.append(1,input) # add bias input x0 to currrent training set input
+            """o = np.append(1,input) # add bias input x0 to currrent training set input
             for i in range(self.n_inputs+1):
                 for j in range(self.n_hidden_units):
                     # for every neuron, a weight change is calculated for each input
-                    dw_l1[i,j] += -self.alpha/N * sig_k_j[j] * o[i] # Naming convention: L1 = layer 1, [0,1] = input 0 (bias) of neutron 1
+                    dw_l1[i,j] += -self.alpha/len(t) * sig_1_j[j] * o[i] # Naming convention: L1 = layer 1, [0,1] = input 0 (bias) of neutron 1"""
 
             # Layer 2 (Output)
-            o_out = np.append(1,o1) # add bias input x0 to currrent training set input
+            """"o1_bias = np.append(1,o1) # add bias input x0 to currrent training set input
             for i in range(self.n_inputs+1):
                 # for every neuron, a weight change is calculated for each input
-                dw_l2[i] += -self.alpha/N * sig_K_j * o_out[i]
+                dw_l2[i] += -self.alpha/len(t) * sig_2_j * o1_bias[i]"""
 
+    
         # Apply weight updates
         #print("layer 1 weights before contribution:")
         #print(self.l1.w)
@@ -183,6 +191,7 @@ class MLP:
         #print(ws2)
 
         self.import_weights([ws1, ws2])
+
         return None # remove this line
 
      def export_weights(self):
@@ -190,12 +199,15 @@ class MLP:
 
 
      def import_weights(self, ws):
-        if ws[0].shape == (self.n_inputs+1, self.n_hidden_units) and ws[1].shape == (self.n_hidden_units+1, 1):
+
+        self.l1.import_weights(ws[0])
+        self.l2.import_weights(ws[1])  
+        """if ws[0].shape == (self.n_inputs+1, self.n_hidden_units) and ws[1].shape == (self.n_hidden_units+1, 1):
             #print("Importing weights..")
             self.l1.import_weights(ws[0])
             self.l2.import_weights(ws[1])        
         else:
-            print("Sizes do not match")
+            print("Sizes do not match")"""
 
 
      def calc_prediction_error(model, x, t):
@@ -207,14 +219,16 @@ class MLP:
             #print(f"OUTPUT: {output}")
             delta_w = (target - output)
             #print(f"ERROR: {delta_w}")
-            E = E + delta_w**2/len(t)
+            E = E + delta_w**2
+        E = E/len(t)
         return E
 
 
 
 if __name__ == "__main__":
     # Test new activation functions
-    data = np.array( [[0.5, 0.5, 0], [1.0, 0, 0], [2.0, 3.0, 0], [0, 1.0, 1], [0, 2.0, 1], [1.0, 2.2, 1] ] )
+    #data = np.array( [[0.5, 0.5, 0], [1.0, 0, 0], [2.0, 3.0, 0], [0, 1.0, 1], [0, 2.0, 1], [1.0, 2.2, 1] ] )
+    data = np.array( [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]] )
     xdata = data[:,:2]
     ydata = data[:,2]
     print("BEGIN TEST -----------------------------------------------------------------")
@@ -247,15 +261,13 @@ if __name__ == "__main__":
     #lay.predict(data)
     #print(lay.w)
 
-
     # TODO: Test MLP class init
     num_inputs = 2
     n_hidden_units = 2
     n_outputs = 1
-    mlp = MLP(num_inputs, n_hidden_units, n_outputs, 1e-3)
+    mlp = MLP(num_inputs, n_hidden_units, n_outputs, 0.01)
     #print("Test MLP with first set:")
     #print(mlp.predict(xdata[0,:])) # Test MLP with first training set
-
 
     # Mean Square Error test for one MLP:
     #print("TEST MSE of MLP with whole test set:")
@@ -264,32 +276,44 @@ if __name__ == "__main__":
     # Training function:
     #print("Test MLP training:")
     #mlp.train(xdata, ydata, 6)
-    
-
-    # TODO: Initialization
-
 
     # TODO: Write a for loop to train the network for a number of iterations. Make plots.
     acceptable = 0
     j = 0
 
-    while(not(acceptable) and j < 5000):
+    print("Initial weights:")
+    print(f"Layer 1: {mlp.l1.w}")
+    print(f"Layer 2: {mlp.l2.w}")
+
+    mse_plot = []
+
+    save_start_w1 = mlp.l1.w
+    save_start_w2 = mlp.l2.w
+    while(not(acceptable) and j < 8000):
         print("Epoch:", j)
-        print("Test MLP training:")
-        mlp.train(xdata, ydata, 6) # Train new weights
+        mlp.train(xdata, ydata) # Train new weights
         mse = mlp.calc_prediction_error(xdata, ydata) # Make a prediction with new weights and find error
-        print(f"MSE: {mse}")
+        print(f"          MSE: {mse}")
+        mse_plot = np.append(mse_plot, mse)
 
-        acceptable = np.all(abs(mse)<0.23) # continue reiterating if prediction is not acceptable
-        
-
+        acceptable = np.all(abs(mse)<0.15) # continue reiterating if prediction is not acceptable
+        if math.isnan(mse):
+            acceptable = 1
+            print("ERROR!")
         j = j + 1
-        print(j)
 
+
+    print(f"Final error: {mse}")
     print(f"Layer 1: {mlp.l1.w}")
     print(f"Layer 2: {mlp.l2.w}")
     print(f"Training took {j} iterations")
 
+    print(f"start w1: {save_start_w1}")
+    print(f"start w2: {save_start_w2}")
 
+    fig = plt.figure()
+    plt.plot(np.linspace(0,j,j), mse_plot, 'k.')
+    plt.xlabel('Epoch')
+    plt.ylabel('MSE')
+    plt.show()
 
-    pass

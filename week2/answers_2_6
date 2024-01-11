@@ -1,0 +1,351 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+
+from robot import SingleLink
+from cmac2 import CMAC
+
+class Trajectories:
+    def __init__(self, A, T):
+        self.A = A
+        self.T = T
+
+    def refTrajConst(self, t):
+        traj = self.A
+        return traj
+
+    def refTrajSin(self, t):
+        traj = self.A * np.sin(2*np.pi*t/self.T)
+        return traj
+
+        
+## Initialize simulation
+class Controllers:
+    def __init__(self, trials):
+        self.Ts = 1e-2
+        self.T_end = 10 # in one trial
+        self.n_steps = int(self.T_end/self.Ts) # in one trial
+        self.n_trials = trials
+
+        self.plant = SingleLink(self.Ts)
+
+        ## Logging variables
+        self.t_vec = np.array([self.Ts*i for i in range(self.n_steps*self.n_trials)])
+        self.theta_vec = np.zeros(self.n_steps*self.n_trials)
+        self.theta_ref_vec = np.zeros(self.n_steps*self.n_trials)
+
+
+    def simPlot(self, title):
+        ## Plotting
+        plt.plot(self.t_vec, self.theta_vec, 'k-', label='Theta')
+        plt.plot(self.t_vec, self.theta_ref_vec, 'r--', label='Reference')
+        plt.title(title)
+        plt.legend()
+        plt.show()
+
+
+    def errorPlot(self):
+        ## Plot trial error
+        error_vec = self.theta_ref_vec - self.theta_vec
+        l = int(traj.T/self.Ts)
+        trial_error = np.zeros(self.n_trials)
+        for t in range(self.n_trials):
+            trial_error[t] = np.sqrt( np.mean( error_vec[t*l:(t+1)*l]**2 ) )
+        return trial_error
+
+
+    def simPD(self, Kp, Kv, trajectory, title):
+        ## Simulation loop
+        for i in range(self.n_steps*self.n_trials):
+            t = i*self.Ts
+            # Calculate the reference at this time step
+            self.theta_ref = trajectory(t)
+
+            # Measure
+            theta = self.plant.theta
+            omega = self.plant.omega
+
+            # Feedback controller
+            error = (self.theta_ref - theta)
+            tau_m = Kp * error + Kv* (-omega)
+            tau = tau_m # + tau_cmac
+            
+            # Iterate simulation dynamics
+            self.plant.step(tau)
+            self.theta_vec[i] = self.plant.theta
+            self.theta_ref_vec[i] = self.theta_ref
+
+        self.simPlot(title)
+
+
+    def simCMAC(self, Kp, Kv, beta, trajectory, title):
+        ## Init CMAC:
+        n_rfs = 11
+        xmin = [0, 0]
+        xmax = [1, 1]
+        c = CMAC(n_rfs, xmin, xmax, 2, beta)
+        e_vec = []
+
+
+        ## Simulation loop
+        for i in range(self.n_steps*self.n_trials):
+            t = i*self.Ts
+            # Calculate the reference at this time step
+            self.theta_ref = trajectory(t)
+
+            # Measure
+            theta = self.plant.theta
+            omega = self.plant.omega
+
+            # Feedback controller
+            error = (self.theta_ref - theta)
+            tau_m = Kp * error + Kv* (-omega)
+            
+            # CMAC
+            x = [self.theta_ref, theta]
+            yhat = c.predict(x)
+            yd = np.arctan2(x[0], x[1])
+            tau_cmac = yhat #- yd
+
+            tau = tau_m + tau_cmac
+
+            # Teach CMAC
+            c.learn(tau_m)
+            e_vec.append(tau_m**2)
+
+            # Iterate simulation dynamics
+            self.plant.step(tau)
+            self.theta_vec[i] = self.plant.theta
+            self.theta_ref_vec[i] = self.theta_ref
+
+        self.simPlot(title)
+        
+    def simCMAC3D(self, Kp, Kv, beta, trajectory, title):
+        ## Init CMAC:
+        n_rfs = 11
+        xmin = [0, 0, 0]
+        xmax = [1, 1, 1]
+        c = CMAC(n_rfs, xmin, xmax, 3, beta)
+        e_vec = []
+
+        ## Simulation loop
+        for i in range(self.n_steps*self.n_trials):
+            t = i*self.Ts
+            # Calculate the reference at this time step
+            self.theta_ref = trajectory(t)
+            # Measure
+            theta = self.plant.theta
+            omega = self.plant.omega
+            # Feedback controller
+            error = (self.theta_ref - theta)
+            tau_m = Kp * error + Kv* (-omega)
+            
+            # CMAC
+            x = [self.theta_ref, theta, omega]
+            yhat = c.predict(x)
+            yd = np.arctan2(x[0], x[1])
+            tau_cmac = yhat #- yd
+
+            tau = tau_m + tau_cmac
+
+            # Teach CMAC
+            c.learn(tau_m)
+            e_vec.append(tau_m**2)
+            # Iterate simulation dynamics
+            self.plant.step(tau)
+            self.theta_vec[i] = self.plant.theta
+            self.theta_ref_vec[i] = self.theta_ref
+        self.simPlot(title)
+
+
+"""
+ctrl = Controllers(1)
+## EXERCISE 2.6.1:
+## Init controller:
+traj = Trajectories(A = np.pi/4, T = 0)
+## Feedback controller variables
+Kp = 2
+Kv = 0
+trajectory = traj.refTrajConst
+title = f"PD Simu, Kp = {Kp}, Kv = {Kv} (Default)"
+## Simulate PD controller:
+pd = ctrl.simPD(Kp, Kv, trajectory, title)
+
+
+## EXERCISE 2.6.2
+## Init controller:
+traj = Trajectories(A = np.pi/4, T = 0)
+## Feedback controller variables
+Kp = 120
+Kv = 10
+trajectory = traj.refTrajConst
+title = f"PD Sim, Kp = {Kp}, Kv = {Kv} (Tuned)"
+## Simulate PD controller:
+ctrl.simPD(Kp, Kv, trajectory, title)
+
+
+
+
+## EXERCISE 2.6.3
+## TODO: Define parameters for periodic reference trajectory
+## Feedback controller variables
+ctrl = Controllers(1)
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+trajectory = traj.refTrajSin
+title = f"PD Sim, Kp={Kp}, Kv={Kv} (Sine trajectory)"
+## Simulate PD controller:
+ctrl.simPD(Kp, Kv, trajectory, title)
+
+
+
+## EXERCISE 2.6.4
+ctrl = Controllers(1)
+
+## Prepare for simulation
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+trajectory = traj.refTrajSin
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv} (Sine trajectory)"
+
+## Simulate PD controller with different learning rates
+beta1 = 1e-3
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+errorPlot1 = ctrl.errorPlot()
+
+
+"""
+"""
+## EXERCISE 2.6.5
+## TODO: CMAC initialization
+ctrl = Controllers(50)
+
+## Prepare for simulation
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+trajectory = traj.refTrajSin
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv} (Sine trajectory)"
+
+## Simulate PD controller with different learning rates
+beta1 = 500e-3
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+errorPlot1 = ctrl.errorPlot()
+
+beta2 = 100e-3
+ctrl.simCMAC(Kp, Kv, beta2, trajectory, title)
+errorPlot2 = ctrl.errorPlot()
+
+beta3 = 10e-3
+ctrl.simCMAC(Kp, Kv, beta3, trajectory, title)
+errorPlot3 = ctrl.errorPlot()
+
+plt.figure()
+
+plt.plot(errorPlot1)
+plt.plot(errorPlot2)
+plt.plot(errorPlot3)
+
+plt.title(f"MSE , Kp={Kp}, Kv={Kv}")
+plt.legend([beta1, beta2, beta3], title = "Learning rate")
+plt.show()
+
+
+## EX 4 again:
+ctrl = Controllers(100)
+## Prepare for simulation
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+trajectory = traj.refTrajSin
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv} (Sine trajectory)"
+
+## Simulate PD controller with different learning rates
+beta1 = 100e-3
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+
+
+ctrl = Controllers(1)
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+
+
+
+
+
+
+## EXERCISE 2.6.6 ###################################################################
+## First train the CMAC over 50 trials
+ctrl = Controllers(50)
+# Prepare for simulation
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+trajectory = traj.refTrajSin
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv} T = 5"
+
+# Simulate PD controller with ideal learning rate
+beta1 = 100e-3
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+errorPlot1 = ctrl.errorPlot()
+
+plt.figure()
+plt.plot(errorPlot1)
+plt.title(f"MSE , Kp={Kp}, Kv={Kv}")
+plt.legend([beta1], title = "Learning rate")
+plt.show()
+
+## Change no. of trial and plot to have something to compare to
+ctrl = Controllers(1)
+
+# Plot CMAC with period T = 5 again for just one trial
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv} T = 5"
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+errorPlot1 = ctrl.errorPlot()
+
+# Change T
+traj = Trajectories(A = np.pi, T = 10) # [0.1Hz]
+trajectory = traj.refTrajSin
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv}, T = 10"
+
+## Simulate PD controller for 1 trial with the new period T
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+
+# Change T
+traj = Trajectories(A = np.pi, T = 1) # [1Hz]
+trajectory = traj.refTrajSin
+title = f"CMAC + PD Sim, Kp={Kp}, Kv={Kv}, T = 1"
+
+## Simulate PD controller for 1 trial with the new period T
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+
+"""
+
+## EXERCISE 2.6.7 ###################################################################
+## The CMAC is updated to include motor velocity (angular velocity omega) as an input
+ctrl = Controllers(100)
+# Prepare for simulation
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+trajectory = traj.refTrajSin
+title = f"3D CMAC + PD Sim, Kp={Kp}, Kv={Kv} T = 5"
+
+# Simulate PD controller with ideal learning rate
+beta1 = 50e-3
+ctrl.simCMAC(Kp, Kv, beta1, trajectory, title)
+errorPlot1 = ctrl.errorPlot()
+
+ctrl = Controllers(100)
+ctrl.simCMAC3D(Kp, Kv, beta1, trajectory, title)
+errorPlot2 = ctrl.errorPlot()
+
+plt.figure()
+plt.plot(errorPlot1)
+plt.plot(errorPlot2)
+plt.title(f"MSE , Kp={Kp}, Kv={Kv}")
+plt.legend(["2D", "3D"], title = "CMAC")
+plt.show()
+
+

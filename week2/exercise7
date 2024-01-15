@@ -1,0 +1,159 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+from adaptive_filter.cerebellum import AdaptiveFilterCerebellum
+from robot import SingleLink
+from cmac2 import CMAC
+
+
+class Trajectories:
+    def __init__(self, A, T):
+        self.A = A
+        self.T = T
+
+    def refTrajConst(self, t):
+        traj = self.A
+        return traj
+
+    def refTrajSin(self, t):
+        traj = self.A * np.sin(2*np.pi*t/self.T)
+        return traj
+
+        
+## Initialize simulation
+class Controllers:
+    def __init__(self, trials):
+        self.Ts = 1e-2
+        self.T_end = 10 # in one trial
+        self.n_steps = int(self.T_end/self.Ts) # in one trial
+        self.n_trials = trials
+        self.plant = SingleLink(self.Ts)
+
+        ## Logging variables
+        self.t_vec = np.array([self.Ts*i for i in range(self.n_steps*self.n_trials)])
+        self.theta_vec = np.zeros(self.n_steps*self.n_trials)
+        self.theta_ref_vec = np.zeros(self.n_steps*self.n_trials)
+
+
+    def simPlot(self, title):
+        ## Plotting
+        plt.plot(self.t_vec, self.theta_vec, 'k-', label='Theta')
+        plt.plot(self.t_vec, self.theta_ref_vec, 'r--', label='Reference')
+        plt.title(title)
+        plt.legend()
+        plt.show()
+
+
+    def errorPlot(self):
+        ## Plot trial error
+        error_vec = self.theta_ref_vec - self.theta_vec
+        l = int(traj.T/self.Ts)
+        trial_error = np.zeros(self.n_trials)
+        for t in range(self.n_trials):
+            trial_error[t] = np.sqrt( np.mean( error_vec[t*l:(t+1)*l]**2 ) )
+        return trial_error
+
+    def simCMAC(self, Kp, Kv, beta, trajectory, title):
+        ## Init CMAC:
+        n_rfs = 11
+        xmin = [0, 0]
+        xmax = [1, 1]
+        c = CMAC(n_rfs, xmin, xmax, 2, beta)
+        e_vec = []
+
+
+        ## Simulation loop
+        for i in range(self.n_steps*self.n_trials):
+            t = i*self.Ts
+            # Calculate the reference at this time step
+            self.theta_ref = trajectory(t)
+
+            # Measure
+            theta = self.plant.theta
+            omega = self.plant.omega
+
+            # Feedback controller
+            error = (self.theta_ref - theta)
+            tau_m = Kp * error + Kv* (-omega)
+            
+            # CMAC
+            x = [self.theta_ref, theta]
+            yhat = c.predict(x)
+            yd = np.arctan2(x[0], x[1])
+            tau_cmac = yhat #- yd
+
+            tau = tau_m + tau_cmac
+
+            # Teach CMAC
+            c.learn(tau_m)
+            e_vec.append(tau_m**2)
+
+            # Iterate simulation dynamics
+            self.plant.step(tau)
+            self.theta_vec[i] = self.plant.theta
+            self.theta_ref_vec[i] = self.theta_ref
+
+        self.simPlot(title)
+
+
+    def simCERE(self, Kp, Kv, trajectory, title):
+        ## Simulation loop
+        for i in range(self.n_steps*self.n_trials):
+            t = i*self.Ts
+            # Calculate the reference at this time step
+            self.theta_ref = trajectory(t)
+            # Measure
+            theta = self.plant.theta
+            omega = self.plant.omega
+
+            # Feedback controller
+            error = self.theta_ref - theta
+            
+            # Cerebellum
+            if i > 0:
+                C = c.step(tau_m, error)
+                error = error + C
+
+            tau_m = Kp * error + Kv* (-omega)
+
+            # Iterate simulation dynamics
+            self.plant.step(tau_m)
+            self.theta_vec[i] = self.plant.theta
+            self.theta_ref_vec[i] = self.theta_ref
+
+        self.simPlot(title)
+        
+
+
+Ts = 1e-3
+n_inputs = 1
+n_outputs = 1
+n_bases = 15
+beta = 100e-6
+
+
+
+
+## TODO: Paste your experiment code from exercise 2.6
+Kp = 120
+Kv = 10
+traj = Trajectories(A = np.pi, T = 5)
+title = f"Adaptive filter sim, Kp={Kp}, Kv={Kv} T = 5"
+
+c = AdaptiveFilterCerebellum(Ts, n_inputs, n_outputs, n_bases, beta)
+ctrl = Controllers(50)
+ctrl.simCERE(Kp, Kv, traj.refTrajSin, title)
+error2 = ctrl.errorPlot()
+
+
+plt.figure()
+plt.plot(error2)
+plt.title(f"Error plot, Cerebellum, n_bases = {n_bases}")
+plt.show()
+
+
+
+## TODO: Change the code to the recurrent architecture
+# You can update the cerebellum with: C = c.step(u, error)
+
+## TODO: Plot results
